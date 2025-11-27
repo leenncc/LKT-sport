@@ -73,21 +73,15 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, setTransact
         customerAddress: customerAddress || undefined
     };
 
-    // Calculate new inventory state
-    const updatedProducts = products.map(p => {
-        const cartItem = cart.find(c => c.productId === p.id);
-        if (cartItem) {
-            return { ...p, quantity: p.quantity - cartItem.quantity };
-        }
-        return p;
-    });
-
     if (onTransactionComplete) {
-      onTransactionComplete(transaction, updatedProducts);
+      onTransactionComplete(transaction);
     } else {
-      // Fallback if no handler provided
+      // Fallback
       setTransactions(prev => [transaction, ...prev]);
-      setProducts(updatedProducts);
+      setProducts(prev => prev.map(p => {
+        const item = cart.find(c => c.productId === p.id);
+        return item ? { ...p, quantity: p.quantity - item.quantity } : p;
+      }));
     }
 
     // Reset

@@ -7,7 +7,7 @@ import { Reports } from './components/Reports';
 import { Settings } from './components/Settings';
 import { MOCK_PRODUCTS, MOCK_TRANSACTIONS } from './constants';
 import { Product, Transaction, ThemeColor } from './types';
-import { fetchSheetData, syncInventoryToSheet, addTransactionToSheet } from './services/sheetService';
+import { fetchSheetData, upsertProduct, deleteProduct, adjustStock, addTransactionToSheet } from './services/sheetService';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -24,11 +24,26 @@ function App() {
     const savedUrl = localStorage.getItem('LKT_SHEET_URL');
     if (savedUrl) {
       setScriptUrl(savedUrl);
-      // We use a silent catch here because we don't want to alert on initial load
-      // (The user might be offline or URL might be stale)
-      loadDataFromSheet(savedUrl).catch(e => console.warn("Initial sync failed:", e));
+      loadDataFromSheet(savedUrl).catch(() => {});
     }
   }, []);
+
+  // POLLING: Auto-refresh data every 15 seconds if connected
+  useEffect(() => {
+    if (!scriptUrl) return;
+    
+    const intervalId = setInterval(() => {
+      // Silent refresh (don't show loading spinner)
+      fetchSheetData(scriptUrl)
+        .then(data => {
+            if (data.products) setProducts(data.products);
+            if (data.transactions) setTransactions(data.transactions);
+        })
+        .catch(e => console.log("Background sync failed", e));
+    }, 15000); // 15 seconds
+
+    return () => clearInterval(intervalId);
+  }, [scriptUrl]);
 
   const loadDataFromSheet = async (url: string): Promise<boolean> => {
     setIsLoading(true);
@@ -36,36 +51,60 @@ function App() {
       const data = await fetchSheetData(url);
       if (data.products) setProducts(data.products);
       if (data.transactions) setTransactions(data.transactions);
-      console.log("Data synced from sheet");
       return true;
     } catch (e) {
-      // IMPORTANT: Throw the error so the Settings component can display the specific message
       throw e;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSyncInventory = (updatedProducts: Product[]) => {
-    // 1. Update Local State
-    setProducts(updatedProducts);
-    // 2. Sync to Cloud if connected
+  // HANDLER: Save a single product (Update or Create)
+  const handleProductSave = (product: Product) => {
+    // Optimistic Update (Update UI immediately)
+    setProducts(prev => {
+        const exists = prev.find(p => p.id === product.id);
+        if (exists) {
+            return prev.map(p => p.id === product.id ? product : p);
+        }
+        return [product, ...prev];
+    });
+
+    // Send to Google Sheet
     if (scriptUrl) {
-      syncInventoryToSheet(scriptUrl, updatedProducts);
+      upsertProduct(scriptUrl, product);
     }
   };
 
-  const handleTransactionComplete = (transaction: Transaction, updatedProducts: Product[]) => {
-    // 1. Update Local State
-    setTransactions(prev => [transaction, ...prev]);
-    setProducts(updatedProducts);
-    
-    // 2. Sync to Cloud
+  // HANDLER: Delete a single product
+  const handleProductDelete = (productId: string) => {
+    // Optimistic Update
+    setProducts(prev => prev.filter(p => p.id !== productId));
+
+    // Send to Google Sheet
     if (scriptUrl) {
-      // We push the transaction individually
+        deleteProduct(scriptUrl, productId);
+    }
+  };
+
+  // HANDLER: Process Sale
+  const handleTransactionComplete = (transaction: Transaction) => {
+    // 1. Optimistic Update (Transactions)
+    setTransactions(prev => [transaction, ...prev]);
+
+    // 2. Optimistic Update (Inventory - Deduct Stock)
+    setProducts(prev => prev.map(p => {
+        const soldItem = transaction.items.find(item => item.productId === p.id);
+        if (soldItem) {
+            return { ...p, quantity: p.quantity - soldItem.quantity };
+        }
+        return p;
+    }));
+    
+    // 3. Sync to Cloud
+    if (scriptUrl) {
       addTransactionToSheet(scriptUrl, transaction);
-      // We also update inventory because stock counts changed
-      syncInventoryToSheet(scriptUrl, updatedProducts);
+      adjustStock(scriptUrl, transaction.items); // Only tell sheet to deduct X from Y
     }
   };
 
@@ -83,7 +122,7 @@ function App() {
           {isLoading && (
             <div className="fixed top-4 right-4 bg-white px-4 py-2 rounded-lg shadow-md border border-slate-100 flex items-center gap-2 z-50 animate-pulse">
                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-               <span className="text-xs font-medium text-slate-600">Syncing with Google Sheets...</span>
+               <span className="text-xs font-medium text-slate-600">Syncing...</span>
             </div>
           )}
 
@@ -99,7 +138,8 @@ function App() {
             <Inventory 
                 products={products} 
                 setProducts={setProducts} 
-                onSync={handleSyncInventory} // Pass the sync handler
+                onProductSave={handleProductSave}
+                onProductDelete={handleProductDelete}
                 theme={theme}
             />
           )}
@@ -109,7 +149,7 @@ function App() {
                 products={products} 
                 setProducts={setProducts} 
                 setTransactions={setTransactions} 
-                onTransactionComplete={handleTransactionComplete} // Pass the sync handler
+                onTransactionComplete={handleTransactionComplete}
                 theme={theme}
             />
           )}

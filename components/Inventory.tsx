@@ -4,7 +4,7 @@ import { Plus, Search, AlertCircle, Sparkles, Trash2, X, Settings2, Calendar, Pe
 import { analyzeObsolescence } from '../services/geminiService';
 import { THEME_COLORS } from '../constants';
 
-export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onSync, theme }) => {
+export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onProductSave, onProductDelete, theme }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -33,29 +33,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
   const handleSaveProduct = () => {
     if (!newProduct.name || !newProduct.costPrice || !newProduct.sellingPrice || !newProduct.category) return;
     
-    let updatedProducts = [...products];
-
-    if (editId) {
-      // Update existing
-      updatedProducts = products.map(p => {
-        if (p.id === editId) {
-          return {
-            ...p,
-            name: newProduct.name!,
-            sku: newProduct.sku || p.sku,
-            category: newProduct.category!,
-            costPrice: Number(newProduct.costPrice),
-            sellingPrice: Number(newProduct.sellingPrice),
-            quantity: Number(newProduct.quantity),
-            dateAdded: newProduct.dateAdded ? new Date(newProduct.dateAdded).toISOString() : p.dateAdded
-          };
-        }
-        return p;
-      });
-    } else {
-      // Add new
-      const product: Product = {
-        id: Math.random().toString(36).substr(2, 9),
+    // Construct the product object
+    const productToSave: Product = {
+        id: editId || Math.random().toString(36).substr(2, 9),
         sku: newProduct.sku || `SKU-${Math.floor(Math.random()*10000)}`,
         name: newProduct.name,
         category: newProduct.category,
@@ -63,14 +43,16 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         sellingPrice: Number(newProduct.sellingPrice),
         quantity: Number(newProduct.quantity),
         dateAdded: newProduct.dateAdded ? new Date(newProduct.dateAdded).toISOString() : new Date().toISOString()
-      };
-      updatedProducts = [product, ...products];
-    }
+    };
 
-    if (onSync) {
-      onSync(updatedProducts);
+    if (onProductSave) {
+        onProductSave(productToSave);
     } else {
-      setProducts(updatedProducts);
+        // Fallback for mock mode
+        setProducts(prev => {
+            if (editId) return prev.map(p => p.id === editId ? productToSave : p);
+            return [productToSave, ...prev];
+        });
     }
 
     resetForm();
@@ -78,9 +60,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
   const handleDelete = (id: string) => {
     if (confirm("Are you sure you want to delete this item?")) {
-      const updated = products.filter(p => p.id !== id);
-      if (onSync) onSync(updated);
-      else setProducts(updated);
+      if (onProductDelete) {
+          onProductDelete(id);
+      } else {
+          setProducts(prev => prev.filter(p => p.id !== id));
+      }
     }
   };
 

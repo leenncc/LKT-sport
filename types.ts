@@ -58,14 +58,15 @@ export interface DashboardProps extends BaseComponentProps {
 export interface InventoryProps extends BaseComponentProps {
   products: Product[];
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
-  onSync?: (updatedProducts: Product[]) => void;
+  onProductSave?: (product: Product) => void;
+  onProductDelete?: (productId: string) => void;
 }
 
 export interface SalesProps extends BaseComponentProps {
   products: Product[];
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
-  onTransactionComplete?: (transaction: Transaction, updatedProducts: Product[]) => void;
+  onTransactionComplete?: (transaction: Transaction) => void;
 }
 
 export interface ReportsProps extends BaseComponentProps {

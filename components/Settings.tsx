@@ -38,27 +38,31 @@ export const Settings: React.FC<SettingsProps> = ({ theme, scriptUrl, setScriptU
     // 3. Attempt Refresh
     try {
         await onRefreshData();
-        // If we get here, no error was thrown
         setStatus('SUCCESS');
         setTimeout(() => setStatus('IDLE'), 3000);
     } catch (e: any) {
         setStatus('ERROR');
-        // Display the actual error message from sheetService
         setErrorMessage(e.message || "Unknown connection error");
     }
   };
 
   const copyCode = () => {
+    // This is the CRITICAL NEW CODE for granular updates
     const code = `
 function doGet(e) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    // Use try/catch here to create sheets if missing without crashing
     let inventorySheet = ss.getSheetByName("Inventory");
-    if (!inventorySheet) inventorySheet = ss.insertSheet("Inventory");
+    if (!inventorySheet) {
+      inventorySheet = ss.insertSheet("Inventory");
+      inventorySheet.appendRow(["id", "name", "category", "costPrice", "sellingPrice", "quantity", "dateAdded", "sku"]);
+    }
     
     let transactionSheet = ss.getSheetByName("Transactions");
-    if (!transactionSheet) transactionSheet = ss.insertSheet("Transactions");
+    if (!transactionSheet) {
+      transactionSheet = ss.insertSheet("Transactions");
+      transactionSheet.appendRow(["id", "date", "items", "totalAmount", "paymentMethod", "customerName", "customerAddress"]);
+    }
 
     const iData = inventorySheet.getDataRange().getValues();
     const tData = transactionSheet.getDataRange().getValues();
@@ -81,28 +85,71 @@ function doPost(e) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const body = JSON.parse(e.postData.contents);
-    
-    if (body.action === 'SYNC_INVENTORY') {
-      const sheet = ss.getSheetByName("Inventory") || ss.insertSheet("Inventory");
-      sheet.clear();
-      if (body.data.length > 0) {
-        const headers = Object.keys(body.data[0]);
-        const values = [headers, ...body.data.map(item => headers.map(h => item[h]))];
-        sheet.getRange(1, 1, values.length, values[0].length).setValues(values);
-      }
-      return success("Inventory Updated");
+    const action = body.action;
+    const data = body.data;
+
+    const iSheet = ss.getSheetByName("Inventory") || ss.insertSheet("Inventory");
+    const tSheet = ss.getSheetByName("Transactions") || ss.insertSheet("Transactions");
+
+    // === ACTION: UPSERT (Add or Update) ===
+    if (action === 'UPSERT_PRODUCT') {
+       const rows = iSheet.getDataRange().getValues();
+       let rowIndex = -1;
+       // Find if exists
+       for (let i = 1; i < rows.length; i++) {
+         if (rows[i][0] == data.id) { // Column 0 is ID
+           rowIndex = i + 1; // 1-based index
+           break;
+         }
+       }
+       
+       const rowData = [data.id, data.name, data.category, data.costPrice, data.sellingPrice, data.quantity, data.dateAdded, data.sku];
+
+       if (rowIndex > 0) {
+         iSheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
+         return success("Product Updated");
+       } else {
+         iSheet.appendRow(rowData);
+         return success("Product Added");
+       }
     }
 
-    if (body.action === 'ADD_TRANSACTION') {
-      const sheet = ss.getSheetByName("Transactions") || ss.insertSheet("Transactions");
-      const t = body.data;
-      const row = [t.id, t.date, JSON.stringify(t.items), t.totalAmount, t.paymentMethod, t.customerName || '', t.customerAddress || ''];
-      if (sheet.getLastRow() === 0) {
-        sheet.appendRow(["id", "date", "items", "totalAmount", "paymentMethod", "customerName", "customerAddress"]);
-      }
-      sheet.appendRow(row);
+    // === ACTION: DELETE ===
+    if (action === 'DELETE_PRODUCT') {
+       const rows = iSheet.getDataRange().getValues();
+       for (let i = 1; i < rows.length; i++) {
+         if (rows[i][0] == data.id) {
+           iSheet.deleteRow(i + 1);
+           return success("Product Deleted");
+         }
+       }
+       return success("Product Not Found");
+    }
+
+    // === ACTION: ADJUST STOCK (Smart Deduction) ===
+    if (action === 'ADJUST_STOCK') {
+       const rows = iSheet.getDataRange().getValues();
+       // data is array of {id, delta}
+       for (let d of data) {
+         for (let i = 1; i < rows.length; i++) {
+           if (rows[i][0] == d.id) {
+             const currentQty = Number(rows[i][5]); // Col 5 is quantity (0-based index)
+             const newQty = Math.max(0, currentQty + d.delta);
+             iSheet.getRange(i + 1, 6).setValue(newQty); // Col 6 is Quantity (1-based)
+             break;
+           }
+         }
+       }
+       return success("Stock Adjusted");
+    }
+
+    // === ACTION: ADD TRANSACTION ===
+    if (action === 'ADD_TRANSACTION') {
+      const row = [data.id, data.date, JSON.stringify(data.items), data.totalAmount, data.paymentMethod, data.customerName || '', data.customerAddress || ''];
+      tSheet.appendRow(row);
       return success("Transaction Added");
     }
+    
     return success("No Action Taken");
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
@@ -126,7 +173,7 @@ function success(msg) {
 }
     `;
     navigator.clipboard.writeText(code);
-    alert("Updated Code copied! Remember to create a NEW Deployment.");
+    alert("New Code copied! This fixes the sync issue.");
   };
 
   return (
@@ -242,10 +289,16 @@ function success(msg) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let inventorySheet = ss.getSheetByName("Inventory");
-    if (!inventorySheet) inventorySheet = ss.insertSheet("Inventory");
+    if (!inventorySheet) {
+      inventorySheet = ss.insertSheet("Inventory");
+      inventorySheet.appendRow(["id", "name", "category", "costPrice", "sellingPrice", "quantity", "dateAdded", "sku"]);
+    }
     
     let transactionSheet = ss.getSheetByName("Transactions");
-    if (!transactionSheet) transactionSheet = ss.insertSheet("Transactions");
+    if (!transactionSheet) {
+      transactionSheet = ss.insertSheet("Transactions");
+      transactionSheet.appendRow(["id", "date", "items", "totalAmount", "paymentMethod", "customerName", "customerAddress"]);
+    }
 
     const iData = inventorySheet.getDataRange().getValues();
     const tData = transactionSheet.getDataRange().getValues();
@@ -268,28 +321,71 @@ function doPost(e) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const body = JSON.parse(e.postData.contents);
-    
-    if (body.action === 'SYNC_INVENTORY') {
-      const sheet = ss.getSheetByName("Inventory") || ss.insertSheet("Inventory");
-      sheet.clear();
-      if (body.data.length > 0) {
-        const headers = Object.keys(body.data[0]);
-        const values = [headers, ...body.data.map(item => headers.map(h => item[h]))];
-        sheet.getRange(1, 1, values.length, values[0].length).setValues(values);
-      }
-      return success("Inventory Updated");
+    const action = body.action;
+    const data = body.data;
+
+    const iSheet = ss.getSheetByName("Inventory") || ss.insertSheet("Inventory");
+    const tSheet = ss.getSheetByName("Transactions") || ss.insertSheet("Transactions");
+
+    // === ACTION: UPSERT (Add or Update) ===
+    if (action === 'UPSERT_PRODUCT') {
+       const rows = iSheet.getDataRange().getValues();
+       let rowIndex = -1;
+       // Find if exists
+       for (let i = 1; i < rows.length; i++) {
+         if (rows[i][0] == data.id) { // Column 0 is ID
+           rowIndex = i + 1; // 1-based index
+           break;
+         }
+       }
+       
+       const rowData = [data.id, data.name, data.category, data.costPrice, data.sellingPrice, data.quantity, data.dateAdded, data.sku];
+
+       if (rowIndex > 0) {
+         iSheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
+         return success("Product Updated");
+       } else {
+         iSheet.appendRow(rowData);
+         return success("Product Added");
+       }
     }
 
-    if (body.action === 'ADD_TRANSACTION') {
-      const sheet = ss.getSheetByName("Transactions") || ss.insertSheet("Transactions");
-      const t = body.data;
-      const row = [t.id, t.date, JSON.stringify(t.items), t.totalAmount, t.paymentMethod, t.customerName || '', t.customerAddress || ''];
-      if (sheet.getLastRow() === 0) {
-        sheet.appendRow(["id", "date", "items", "totalAmount", "paymentMethod", "customerName", "customerAddress"]);
-      }
-      sheet.appendRow(row);
+    // === ACTION: DELETE ===
+    if (action === 'DELETE_PRODUCT') {
+       const rows = iSheet.getDataRange().getValues();
+       for (let i = 1; i < rows.length; i++) {
+         if (rows[i][0] == data.id) {
+           iSheet.deleteRow(i + 1);
+           return success("Product Deleted");
+         }
+       }
+       return success("Product Not Found");
+    }
+
+    // === ACTION: ADJUST STOCK (Smart Deduction) ===
+    if (action === 'ADJUST_STOCK') {
+       const rows = iSheet.getDataRange().getValues();
+       // data is array of {id, delta}
+       for (let d of data) {
+         for (let i = 1; i < rows.length; i++) {
+           if (rows[i][0] == d.id) {
+             const currentQty = Number(rows[i][5]); // Col 5 is quantity (0-based index)
+             const newQty = Math.max(0, currentQty + d.delta);
+             iSheet.getRange(i + 1, 6).setValue(newQty); // Col 6 is Quantity (1-based)
+             break;
+           }
+         }
+       }
+       return success("Stock Adjusted");
+    }
+
+    // === ACTION: ADD TRANSACTION ===
+    if (action === 'ADD_TRANSACTION') {
+      const row = [data.id, data.date, JSON.stringify(data.items), data.totalAmount, data.paymentMethod, data.customerName || '', data.customerAddress || ''];
+      tSheet.appendRow(row);
       return success("Transaction Added");
     }
+    
     return success("No Action Taken");
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))

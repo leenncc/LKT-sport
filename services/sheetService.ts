@@ -1,13 +1,10 @@
-import { Product, Transaction } from "../types";
+import { Product, Transaction, TransactionItem } from "../types";
 
 export const fetchSheetData = async (scriptUrl: string) => {
   try {
-    // Append cache-buster to ensure we don't get a cached 302 redirect or old data
     const urlWithParams = `${scriptUrl}?action=read&t=${Date.now()}`;
 
-    // IMPORTANT: Do NOT set Content-Type header for GET requests.
-    // Setting it triggers a CORS Preflight (OPTIONS) request, which Google Apps Script
-    // often fails to handle correctly, leading to "Network Error".
+    // No custom headers to avoid CORS preflight
     const response = await fetch(urlWithParams, {
       method: "GET"
     });
@@ -16,12 +13,10 @@ export const fetchSheetData = async (scriptUrl: string) => {
         throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
     }
 
-    // Get text first to safely check for HTML (permission error pages)
     const text = await response.text();
     
-    // If the response starts with <, it's likely an HTML error page (Login/Access Denied)
     if (text.trim().startsWith("<")) {
-      throw new Error("Received HTML instead of JSON. This usually means 'Anyone' access is not set correctly on the deployment.");
+      throw new Error("Received HTML error. Please ensure 'Who has access' is set to 'Anyone' in your Google Script deployment.");
     }
 
     try {
@@ -31,8 +26,7 @@ export const fetchSheetData = async (scriptUrl: string) => {
         }
         return data;
     } catch (e) {
-        console.error("JSON Parse Error. Raw text:", text);
-        throw new Error("Invalid JSON response. The script URL might be wrong or the script crashed.");
+        throw new Error("Invalid Data received from Sheet.");
     }
 
   } catch (error: any) {
@@ -41,18 +35,49 @@ export const fetchSheetData = async (scriptUrl: string) => {
   }
 };
 
-export const syncInventoryToSheet = async (scriptUrl: string, products: Product[]) => {
+// Update or Add a single product (doesn't overwrite other rows)
+export const upsertProduct = async (scriptUrl: string, product: Product) => {
   try {
-    // For POST, we use text/plain to avoid preflight, but we still send body
     await fetch(scriptUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8",
-      },
-      body: JSON.stringify({ action: "SYNC_INVENTORY", data: products })
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "UPSERT_PRODUCT", data: product })
     });
   } catch (error) {
-    console.error("Failed to sync inventory", error);
+    console.error("Failed to save product", error);
+  }
+};
+
+// Delete a single product
+export const deleteProduct = async (scriptUrl: string, productId: string) => {
+  try {
+    await fetch(scriptUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "DELETE_PRODUCT", data: { id: productId } })
+    });
+  } catch (error) {
+    console.error("Failed to delete product", error);
+  }
+};
+
+// Deduct stock for sold items only
+export const adjustStock = async (scriptUrl: string, items: TransactionItem[]) => {
+  try {
+    // Convert transaction items to simple id/delta pairs
+    // delta is negative because we are selling
+    const adjustments = items.map(item => ({
+      id: item.productId,
+      delta: -item.quantity
+    }));
+
+    await fetch(scriptUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "ADJUST_STOCK", data: adjustments })
+    });
+  } catch (error) {
+    console.error("Failed to adjust stock", error);
   }
 };
 
@@ -60,9 +85,7 @@ export const addTransactionToSheet = async (scriptUrl: string, transaction: Tran
   try {
     await fetch(scriptUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8",
-      },
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: "ADD_TRANSACTION", data: transaction })
     });
   } catch (error) {
