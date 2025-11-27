@@ -9,22 +9,31 @@ import { MOCK_PRODUCTS, MOCK_TRANSACTIONS } from './constants';
 import { Product, Transaction, ThemeColor } from './types';
 import { fetchSheetData, upsertProduct, deleteProduct, adjustStock, addTransactionToSheet } from './services/sheetService';
 
+const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwsLvTut-jqLFyAtWByJRo4F8pRHoyREEHSdsUyXwZrQc4OtxUVEM6f6lo8PT3MSxXw/exec";
+
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [theme, setTheme] = useState<ThemeColor>('emerald');
-  const [scriptUrl, setScriptUrl] = useState('');
+  const [scriptUrl, setScriptUrl] = useState(DEFAULT_SCRIPT_URL);
   
   // Data State
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load script URL from local storage on mount
+  // Load script URL from local storage on mount, or use default
   useEffect(() => {
     const savedUrl = localStorage.getItem('LKT_SHEET_URL');
-    if (savedUrl) {
-      setScriptUrl(savedUrl);
-      loadDataFromSheet(savedUrl).catch(() => {});
+    const urlToUse = savedUrl || DEFAULT_SCRIPT_URL;
+    
+    setScriptUrl(urlToUse);
+    
+    // Always attempt to load data on startup
+    loadDataFromSheet(urlToUse).catch(() => {});
+    
+    // If we fell back to default, save it for consistency
+    if (!savedUrl) {
+        localStorage.setItem('LKT_SHEET_URL', DEFAULT_SCRIPT_URL);
     }
   }, []);
 
