@@ -9,7 +9,7 @@ import { MOCK_PRODUCTS, MOCK_TRANSACTIONS } from './constants';
 import { Product, Transaction, ThemeColor } from './types';
 import { fetchSheetData, upsertProduct, deleteProduct, adjustStock, addTransactionToSheet } from './services/sheetService';
 
-const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwsLvTut-jqLFyAtWByJRo4F8pRHoyREEHSdsUyXwZrQc4OtxUVEM6f6lo8PT3MSxXw/exec";
+const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxWrYFJQDouXn3tcpgjxmFegFWWVvHL7uUaZKUqH4aIdG0aTxZmuxA4AwrL9xlbU0g5/exec";
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');

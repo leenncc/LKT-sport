@@ -23,8 +23,10 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, setTransact
     const existing = cart.find(item => item.productId === product.id);
     
     // Check stock
+    const currentStock = Number(product.quantity) || 0;
     const currentQtyInCart = existing ? existing.quantity : 0;
-    if (product.quantity <= currentQtyInCart) {
+    
+    if (currentStock <= currentQtyInCart) {
         alert("Insufficient stock!");
         return;
     }
@@ -107,7 +109,9 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, setTransact
                         onChange={(e) => setSelectedProduct(e.target.value)}
                     >
                         <option value="">-- Choose Item --</option>
-                        {products.filter(p => p.quantity > 0).map(p => (
+                        {products
+                            .filter(p => (Number(p.quantity) || 0) > 0)
+                            .map(p => (
                             <option key={p.id} value={p.id}>
                                 {p.name} - RM {p.sellingPrice} ({p.quantity} in stock)
                             </option>

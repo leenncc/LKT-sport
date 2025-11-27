@@ -14,14 +14,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, transactions, th
   // 1. Vibrant Multi-color Palette for Categories
   const PALETTE = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444', '#ec4899', '#6366f1'];
 
-  // Metrics
-  const totalRevenue = transactions.reduce((acc, t) => acc + t.totalAmount, 0);
-  const totalStockValue = products.reduce((acc, p) => acc + (p.costPrice * p.quantity), 0);
+  // Metrics (Safety Check: ensure values are numbers)
+  const totalRevenue = transactions.reduce((acc, t) => acc + (Number(t.totalAmount) || 0), 0);
+  const totalStockValue = products.reduce((acc, p) => acc + ((Number(p.costPrice) || 0) * (Number(p.quantity) || 0)), 0);
   
   // Identify stale inventory (> 120 days)
   const today = new Date();
   const staleItems = products.filter(p => {
-    const days = (today.getTime() - new Date(p.dateAdded).getTime()) / (1000 * 3600 * 24);
+    const d = new Date(p.dateAdded);
+    if (isNaN(d.getTime())) return false; // Skip bad dates
+    const days = (today.getTime() - d.getTime()) / (1000 * 3600 * 24);
     return days > 120;
   });
 
@@ -41,11 +43,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, transactions, th
   // Data Preparation: Categories
   const categoryData = useMemo(() => {
     const data = products.reduce((acc: any[], curr) => {
+      // Safety: Ensure quantity is number
+      const qty = Number(curr.quantity) || 0;
+      if (qty <= 0) return acc;
+
       const existing = acc.find(item => item.name === curr.category);
       if (existing) {
-        existing.value += curr.quantity;
+        existing.value += qty;
       } else {
-        acc.push({ name: curr.category, value: curr.quantity });
+        acc.push({ name: curr.category, value: qty });
       }
       return acc;
     }, []);
@@ -59,12 +65,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, transactions, th
     let obsolete = 0; // > 120 days
 
     products.forEach(p => {
-        const diff = today.getTime() - new Date(p.dateAdded).getTime();
+        const d = new Date(p.dateAdded);
+        const qty = Number(p.quantity) || 0;
+        
+        if (isNaN(d.getTime()) || qty <= 0) return; // Skip bad data
+
+        const diff = today.getTime() - d.getTime();
         const days = Math.floor(diff / (1000 * 3600 * 24));
         
-        if (days > 120) obsolete += p.quantity;
-        else if (days > 90) aging += p.quantity;
-        else fresh += p.quantity;
+        if (days > 120) obsolete += qty;
+        else if (days > 90) aging += qty;
+        else fresh += qty;
     });
 
     return [
@@ -74,7 +85,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, transactions, th
     ].filter(item => item.value > 0);
   }, [products]);
 
-  const totalItems = products.reduce((acc, p) => acc + p.quantity, 0);
+  const totalItems = products.reduce((acc, p) => acc + (Number(p.quantity) || 0), 0);
 
   // Helper to render percentages
   const renderCustomLegend = (data: any[]) => (
@@ -84,7 +95,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, transactions, th
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color || PALETTE[idx % PALETTE.length] }}></div>
           <span className="font-medium text-slate-700">{item.name}</span>
           <span className="text-slate-400">
-            {Math.round((item.value / totalItems) * 100)}%
+            {totalItems > 0 ? Math.round((item.value / totalItems) * 100) : 0}%
           </span>
         </div>
       ))}
@@ -164,27 +175,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, transactions, th
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 min-h-[350px] flex flex-col">
           <h3 className="text-lg font-semibold text-slate-800 mb-2">Inventory by Category</h3>
           <div className="flex-1 min-h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
-                    paddingAngle={3}
-                    dataKey="value"
-                >
-                    {categoryData.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={PALETTE[index % PALETTE.length]} stroke="white" strokeWidth={2} />
-                    ))}
-                </Pie>
-                <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                    formatter={(value: number) => [`${value} units`, 'Quantity']}
-                />
-                </PieChart>
-            </ResponsiveContainer>
+             {categoryData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                    <Pie
+                        data={categoryData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={3}
+                        dataKey="value"
+                    >
+                        {categoryData.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={PALETTE[index % PALETTE.length]} stroke="white" strokeWidth={2} />
+                        ))}
+                    </Pie>
+                    <Tooltip 
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                        formatter={(value: number) => [`${value} units`, 'Quantity']}
+                    />
+                    </PieChart>
+                </ResponsiveContainer>
+             ) : (
+                 <div className="flex items-center justify-center h-full text-slate-400">
+                     No valid inventory data
+                 </div>
+             )}
           </div>
           {renderCustomLegend(categoryData)}
         </div>

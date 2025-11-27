@@ -1,5 +1,44 @@
 import { Product, Transaction, TransactionItem } from "../types";
 
+// Helper to ensure data is clean before it hits the UI
+const sanitizeProducts = (rawProducts: any[]): Product[] => {
+    if (!Array.isArray(rawProducts)) return [];
+    
+    return rawProducts.map(p => {
+        // FLEXIBLE KEY CHECKING:
+        // Check for multiple common header names to support different sheet layouts
+        const rawCost = p.costPrice !== undefined ? p.costPrice : (p.cost !== undefined ? p.cost : p.buyingPrice);
+        const rawSell = p.sellingPrice !== undefined ? p.sellingPrice : (p.sell !== undefined ? p.sell : p.price);
+        const rawQty = p.quantity !== undefined ? p.quantity : (p.qty !== undefined ? p.qty : p.stock);
+        const rawDate = p.dateAdded !== undefined ? p.dateAdded : (p.date !== undefined ? p.date : p.created);
+
+        // Ensure numbers are actually numbers
+        const costPrice = Number(rawCost);
+        const sellingPrice = Number(rawSell);
+        const quantity = Number(rawQty);
+        
+        // Ensure date is valid
+        let dateAdded = rawDate;
+        const parsedDate = new Date(dateAdded);
+        if (isNaN(parsedDate.getTime())) {
+            dateAdded = new Date().toISOString(); // Default to today if invalid
+        } else {
+            dateAdded = parsedDate.toISOString(); // Standardize format
+        }
+
+        return {
+            id: String(p.id || Math.random().toString(36).substr(2, 9)),
+            sku: String(p.sku || ''),
+            name: String(p.name || 'Unknown Item'),
+            category: String(p.category || 'Uncategorized'),
+            costPrice: isNaN(costPrice) ? 0 : costPrice,
+            sellingPrice: isNaN(sellingPrice) ? 0 : sellingPrice,
+            quantity: isNaN(quantity) ? 0 : quantity,
+            dateAdded: dateAdded
+        };
+    });
+};
+
 export const fetchSheetData = async (scriptUrl: string) => {
   try {
     const urlWithParams = `${scriptUrl}?action=read&t=${Date.now()}`;
@@ -24,8 +63,15 @@ export const fetchSheetData = async (scriptUrl: string) => {
         if (data.status === 'error') {
             throw new Error(`SCRIPT_ERROR: ${data.message}`);
         }
+
+        // SANITIZE DATA HERE
+        if (data.products) {
+            data.products = sanitizeProducts(data.products);
+        }
+
         return data;
     } catch (e) {
+        console.error("Parse Error", e);
         throw new Error("Invalid Data received from Sheet.");
     }
 

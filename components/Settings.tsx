@@ -53,7 +53,8 @@ function doGet(e) {
     let inventorySheet = ss.getSheetByName("Inventory");
     if (!inventorySheet) {
       inventorySheet = ss.insertSheet("Inventory");
-      inventorySheet.appendRow(["id", "name", "category", "costPrice", "sellingPrice", "quantity", "dateAdded", "sku"]);
+      // FIXED HEADER ORDER
+      inventorySheet.appendRow(["id", "sku", "name", "category", "costPrice", "sellingPrice", "quantity", "dateAdded"]);
     }
     
     let transactionSheet = ss.getSheetByName("Transactions");
@@ -71,7 +72,7 @@ function doGet(e) {
       items: t.items ? JSON.parse(t.items) : []
     }));
 
-    return ContentService.createTextOutput(JSON.stringify({ products, transactions }))
+    return ContentService.createTextOutput(JSON.stringify({ products, transactions, version: "2.0" }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
@@ -101,7 +102,17 @@ function doPost(e) {
          }
        }
        
-       const rowData = [data.id, data.name, data.category, data.costPrice, data.sellingPrice, data.quantity, data.dateAdded, data.sku];
+       // FIXED DATA ORDER: id, sku, name, category, cost, sell, qty, date
+       const rowData = [
+         data.id, 
+         data.sku, 
+         data.name, 
+         data.category, 
+         data.costPrice, 
+         data.sellingPrice, 
+         data.quantity, 
+         data.dateAdded
+       ];
 
        if (rowIndex > 0) {
          iSheet.getRange(rowIndex, 1, 1, rowData.length).setValues([rowData]);
@@ -131,9 +142,11 @@ function doPost(e) {
        for (let d of data) {
          for (let i = 1; i < rows.length; i++) {
            if (rows[i][0] == d.id) {
-             const currentQty = Number(rows[i][5]); // Col 5 is quantity (0-based index)
+             // FIXED COLUMN INDEX: Quantity is Column G (Index 6)
+             const currentQty = Number(rows[i][6]); 
              const newQty = Math.max(0, currentQty + d.delta);
-             iSheet.getRange(i + 1, 6).setValue(newQty); // Col 6 is Quantity (1-based)
+             // FIXED WRITE COLUMN: Column G is the 7th column (1-based)
+             iSheet.getRange(i + 1, 7).setValue(newQty); 
              break;
            }
          }
@@ -192,7 +205,7 @@ function success(msg) {
                     type="text" 
                     value={localUrl}
                     onChange={(e) => setLocalUrl(e.target.value)}
-                    placeholder="https://script.google.com/macros/s/.../exec"
+                    placeholder="https://script.google.com/macros/s/AKfycbxWrYFJQDouXn3tcpgjxmFegFWWVvHL7uUaZKUqH4aIdG0aTxZmuxA4AwrL9xlbU0g5/exec"
                     className={`flex-1 p-2 border border-slate-300 rounded-lg outline-none focus:ring-2 ${styles.ring}`}
                 />
                 <button 
@@ -211,7 +224,7 @@ function success(msg) {
             
             {status === 'SUCCESS' && (
                 <div className="mt-3 flex items-center gap-2 text-sm text-emerald-600 font-medium animate-fade-in">
-                    <CheckCircle className="w-4 h-4" /> Connection Successful! Data Synced.
+                    <CheckCircle className="w-4 h-4" /> Connection Successful! Data Synced. <span className="text-xs text-emerald-400 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">Backend v2.0</span>
                 </div>
             )}
             

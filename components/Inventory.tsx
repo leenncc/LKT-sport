@@ -103,13 +103,19 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onP
   );
 
   const getDaysInStock = (dateStr: string) => {
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const added = new Date(dateStr);
-    added.setHours(0,0,0,0);
-    const diffTime = Math.abs(today.getTime() - added.getTime());
-    const days = Math.floor(diffTime / (1000 * 3600 * 24));
-    return days;
+    try {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const added = new Date(dateStr);
+        if (isNaN(added.getTime())) return 0; // Handle invalid dates
+        
+        added.setHours(0,0,0,0);
+        const diffTime = Math.abs(today.getTime() - added.getTime());
+        const days = Math.floor(diffTime / (1000 * 3600 * 24));
+        return isNaN(days) ? 0 : days;
+    } catch {
+        return 0;
+    }
   };
 
   return (
@@ -200,7 +206,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onP
                 {filteredProducts.map(product => {
                     const days = getDaysInStock(product.dateAdded);
                     const isObsolete = days > obsolescenceThreshold;
-                    const riskPercentage = Math.min(100, (days / obsolescenceThreshold) * 100);
+                    // Protect against NaN
+                    const rawPercentage = (days / obsolescenceThreshold) * 100;
+                    const safePercentage = isNaN(rawPercentage) ? 0 : rawPercentage;
+                    const riskPercentage = Math.min(100, safePercentage);
                     
                     let riskColor = 'bg-emerald-500';
                     let riskLabel = 'Fresh';
